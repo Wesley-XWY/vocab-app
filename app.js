@@ -49,7 +49,9 @@ async function apiRequest(path, method = 'GET', body = null) {
             throw new Error(`API ${resp.status}: ${errText}`);
         }
         if (resp.status === 204) return null;
-        return await resp.json();
+        const text = await resp.text();
+        if (!text) return null;
+        return JSON.parse(text);
     } catch (e) {
         console.error('请求失败:', e);
         throw e;
