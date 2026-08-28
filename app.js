@@ -886,16 +886,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 认证相关
     document.getElementById('loginBtn').addEventListener('click', () => openAuthModal('login'));
-    document.getElementById('registerBtn').addEventListener('click', () => openAuthModal('register'));
+    // 已关闭注册功能，仅管理员可在后台创建用户
+    // document.getElementById('registerBtn').addEventListener('click', () => openAuthModal('register'));
     document.getElementById('bannerLoginBtn').addEventListener('click', () => openAuthModal('login'));
-    document.getElementById('bannerRegisterBtn').addEventListener('click', () => openAuthModal('register'));
+    // document.getElementById('bannerRegisterBtn').addEventListener('click', () => openAuthModal('register'));
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
     document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
     document.getElementById('authCancelBtn').addEventListener('click', closeAuthModal);
     document.getElementById('authClose').addEventListener('click', closeAuthModal);
-    document.getElementById('authSwitchBtn').addEventListener('click', () => {
-        openAuthModal(authMode === 'login' ? 'register' : 'login');
-    });
+    // 已关闭注册切换
+    // document.getElementById('authSwitchBtn').addEventListener('click', () => {
+    //     openAuthModal(authMode === 'login' ? 'register' : 'login');
+    // });
     document.getElementById('authForm').addEventListener('submit', (e) => {
         e.preventDefault();
         handleAuthSubmit();

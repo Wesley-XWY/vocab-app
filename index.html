@@ -22,7 +22,6 @@
             <!-- 未登录时显示 -->
             <div id="guestButtons">
                 <button class="btn btn-primary" id="loginBtn">登录</button>
-                <button class="btn btn-secondary" id="registerBtn">注册</button>
             </div>
             <!-- 登录后显示 -->
             <div id="userButtons" style="display:none">
@@ -38,9 +37,8 @@
 
     <!-- 访客提示条 -->
     <div class="guest-banner" id="guestBanner" style="display:none">
-        <span>👋 你正在浏览示例单词，登录后可以管理自己的单词本</span>
+        <span>👋 你正在浏览示例单词，请联系管理员开通账号后登录使用</span>
         <button class="btn btn-primary btn-sm" id="bannerLoginBtn">立即登录</button>
-        <button class="btn btn-secondary btn-sm" id="bannerRegisterBtn">注册账号</button>
     </div>
 
     <!-- 筛选栏 -->
@@ -114,8 +112,7 @@
                     <div class="auth-message" id="authMessage" style="display:none"></div>
                 </form>
                 <div class="auth-switch">
-                    <span id="authSwitchText">还没有账号？</span>
-                    <button class="btn btn-link" id="authSwitchBtn">立即注册</button>
+                    <span style="color:var(--text-muted);font-size:13px;">没有账号？请联系管理员开通</span>
                 </div>
             </div>
             <div class="modal-footer">
