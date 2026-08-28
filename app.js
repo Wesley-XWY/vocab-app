@@ -20,6 +20,12 @@ let nextId = 1;
 let currentUser = null;
 let isGuest = true;
 
+// 访客模式本地单词（存在localStorage，最多20个）
+const MAX_LOCAL_WORDS = 20;
+const LOCAL_STORAGE_KEY = 'vocab_app_local_words';
+let localWords = [];
+let localNextId = 100000; // 本地单词ID从100000开始，避免和云端ID冲突
+
 let filters = {
     level: '',
     priority: '',
@@ -157,30 +163,50 @@ function updateAuthUI() {
     }
 }
 
+// ===== 访客模式本地单词管理 =====
+function loadLocalWords() {
+    try {
+        const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (data) {
+            localWords = JSON.parse(data);
+            localNextId = localWords.length > 0 ? Math.max(...localWords.map(w => w.id)) + 1 : 100000;
+        } else {
+            localWords = [];
+            localNextId = 100000;
+        }
+    } catch (e) {
+        console.error('加载本地单词失败:', e);
+        localWords = [];
+        localNextId = 100000;
+    }
+}
+
+function saveLocalWords() {
+    try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localWords));
+    } catch (e) {
+        console.error('保存本地单词失败:', e);
+    }
+}
+
+function isLocalWord(id) {
+    return id >= 100000;
+}
+
 let authMode = 'login'; // 'login' or 'register'
 
 function openAuthModal(mode) {
     authMode = mode;
     const title = document.getElementById('authTitle');
     const submitBtn = document.getElementById('authSubmitBtn');
-    const switchText = document.getElementById('authSwitchText');
-    const switchBtn = document.getElementById('authSwitchBtn');
     const message = document.getElementById('authMessage');
 
     message.style.display = 'none';
     message.textContent = '';
 
-    if (mode === 'login') {
-        title.textContent = '登录';
-        submitBtn.textContent = '登录';
-        switchText.textContent = '还没有账号？';
-        switchBtn.textContent = '立即注册';
-    } else {
-        title.textContent = '注册';
-        submitBtn.textContent = '注册';
-        switchText.textContent = '已有账号？';
-        switchBtn.textContent = '立即登录';
-    }
+    // 仅登录模式（注册功能已关闭，由管理员在后台创建用户）
+    title.textContent = '登录';
+    submitBtn.textContent = '登录';
 
     document.getElementById('authForm').reset();
     document.getElementById('authModal').style.display = 'flex';
@@ -287,7 +313,16 @@ async function initData() {
         words = (data || []).map(dbToFrontend);
         nextId = words.length > 0 ? Math.max(...words.map(w => w.id)) + 1 : 1;
 
-        console.log(`加载了 ${words.length} 个单词 (${isGuest ? '访客模式' : '已登录: ' + currentUser.email})`);
+        // 访客模式：加载本地单词并合并
+        if (isGuest) {
+            loadLocalWords();
+            // 本地单词标记isLocal，放在列表前面
+            localWords.forEach(w => w.isLocal = true);
+            words = [...localWords, ...words];
+            console.log(`加载了 ${words.length} 个单词 (示例 ${words.length - localWords.length} + 本地 ${localWords.length})`);
+        } else {
+            console.log(`加载了 ${words.length} 个单词 (已登录: ${currentUser.email})`);
+        }
     } catch (e) {
         console.error('加载数据失败:', e);
         alert('加载单词失败，请检查网络连接后刷新页面。\n\n错误信息: ' + e.message);
@@ -307,13 +342,26 @@ function calcPriority(level) {
 
 // 更新单词的最近复习日期和复习次数
 async function updateLastReview(wordId) {
-    if (isGuest) return; // 访客模式不更新
     const w = words.find(x => x.id === wordId);
-    if (w) {
-        const today = new Date().toISOString().split('T')[0];
-        w.lastReview = today;
-        w.reviewCount = (w.reviewCount || 0) + 1;
+    if (!w) return;
 
+    // 示例单词不更新复习记录（公共示例，只读）
+    if (isGuest && !w.isLocal) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    w.lastReview = today;
+    w.reviewCount = (w.reviewCount || 0) + 1;
+
+    if (isGuest && w.isLocal) {
+        // 访客模式：更新本地单词，保存到localStorage
+        const idx = localWords.findIndex(x => x.id === wordId);
+        if (idx >= 0) {
+            localWords[idx].lastReview = today;
+            localWords[idx].reviewCount = w.reviewCount;
+            saveLocalWords();
+        }
+    } else if (!isGuest) {
+        // 登录模式：同步到云端
         apiRequest(`/words?id=eq.${wordId}`, 'PATCH', {
             last_review: today,
             review_count: w.reviewCount
@@ -325,7 +373,9 @@ async function updateLastReview(wordId) {
 function updateStats() {
     const stats = document.getElementById('totalStats');
     if (isGuest) {
-        stats.textContent = `示例 ${words.length} 词`;
+        const localCount = words.filter(w => w.isLocal).length;
+        const sampleCount = words.length - localCount;
+        stats.textContent = `示例 ${sampleCount} 词 · 本地 ${localCount}/${MAX_LOCAL_WORDS} 词`;
     } else {
         stats.textContent = `共 ${words.length} 词`;
     }
@@ -392,7 +442,8 @@ function renderWordList() {
                     ${w.level ? `<span class="tag tag-level tag-level-${w.level}">${w.level}</span>` : '<span class="tag tag-level tag-pending">待评级</span>'}
                     ${w.priority ? `<span class="tag tag-priority-${w.priority}">${w.priority}优先</span>` : '<span class="tag tag-priority-pending">待评级</span>'}
                     ${w.category ? `<span class="tag tag-category">${escapeHtml(w.category)}</span>` : ''}
-                    ${isGuest ? '<span class="tag" style="background:#30363d;color:#8b949e;">示例</span>' : ''}
+                    ${isGuest && w.isLocal ? '<span class="tag" style="background:rgba(63,185,80,0.2);color:#3fb950;border:1px solid rgba(63,185,80,0.3);">体验</span>' : ''}
+                    ${isGuest && !w.isLocal ? '<span class="tag" style="background:#30363d;color:#8b949e;">示例</span>' : ''}
                 </div>
             </div>
             ${w.phonetic ? `<div class="word-card-phonetic">${escapeHtml(w.phonetic)}</div>` : ''}
@@ -408,7 +459,7 @@ function renderWordList() {
                 ${w.extend ? `<div class="detail-section"><div class="detail-label">扩展 / 搭配</div><div class="detail-content">${escapeHtml(w.extend)}</div></div>` : ''}
                 ${w.scene ? `<div class="detail-section"><div class="detail-label">场景 / 备注</div><div class="detail-content">${escapeHtml(w.scene)}</div></div>` : ''}
             </div>
-            ${!isGuest ? `
+            ${(!isGuest || w.isLocal) ? `
             <div class="word-card-actions">
                 <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editWord(${w.id})">编辑</button>
                 <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); deleteWord(${w.id})">删除</button>
@@ -423,17 +474,20 @@ function renderWordList() {
             if (e.target.classList.contains('speak-btn')) return;
             const isExpanding = !card.classList.contains('expanded');
             card.classList.toggle('expanded');
-            if (isExpanding && !isGuest) {
+            if (isExpanding) {
                 const wordId = parseInt(card.dataset.id);
-                updateLastReview(wordId);
-                const dateItems = card.querySelectorAll('.date-item');
-                const today = new Date().toISOString().split('T')[0];
                 const w = words.find(x => x.id === wordId);
-                if (dateItems.length >= 2) {
-                    dateItems[1].textContent = '复习：' + today;
-                }
-                if (dateItems.length >= 3 && w) {
-                    dateItems[2].textContent = '次数：' + w.reviewCount;
+                // 示例单词不更新复习记录，本地单词和登录用户的单词都更新
+                if (!isGuest || (w && w.isLocal)) {
+                    updateLastReview(wordId);
+                    const dateItems = card.querySelectorAll('.date-item');
+                    const today = new Date().toISOString().split('T')[0];
+                    if (dateItems.length >= 2) {
+                        dateItems[1].textContent = '复习：' + today;
+                    }
+                    if (dateItems.length >= 3 && w) {
+                        dateItems[2].textContent = '次数：' + w.reviewCount;
+                    }
                 }
             }
         });
@@ -458,11 +512,15 @@ function escapeHtml(str) {
 // ===== 单词 CRUD =====
 function openAddModal() {
     if (isGuest) {
-        alert('请先登录后再新增单词');
-        openAuthModal('login');
-        return;
+        // 访客模式：检查本地单词数量上限
+        if (localWords.length >= MAX_LOCAL_WORDS) {
+            alert(`体验模式最多可新增 ${MAX_LOCAL_WORDS} 个单词。\n\n登录后可使用完整功能，数据云端同步。\n管理员微信/电话：17623258916`);
+            return;
+        }
+        document.getElementById('modalTitle').textContent = '体验新增（仅保存在本地）';
+    } else {
+        document.getElementById('modalTitle').textContent = '新增单词';
     }
-    document.getElementById('modalTitle').textContent = '新增单词';
     document.getElementById('wordId').value = '';
     document.getElementById('wordForm').reset();
     document.getElementById('formDate').value = new Date().toISOString().split('T')[0];
@@ -474,14 +532,17 @@ function openAddModal() {
 }
 
 function editWord(id) {
-    if (isGuest) {
-        alert('请先登录后再编辑单词');
-        openAuthModal('login');
-        return;
-    }
     const w = words.find(x => x.id === id);
     if (!w) return;
-    document.getElementById('modalTitle').textContent = '编辑单词';
+    if (isGuest && !w.isLocal) {
+        alert('示例单词不能编辑，请登录后使用完整功能。\n管理员微信/电话：17623258916');
+        return;
+    }
+    if (isGuest && w.isLocal) {
+        document.getElementById('modalTitle').textContent = '编辑（仅本地）';
+    } else {
+        document.getElementById('modalTitle').textContent = '编辑单词';
+    }
     document.getElementById('wordId').value = w.id;
     document.getElementById('formWord').value = w.word || '';
     document.getElementById('formCategory').value = w.category || '';
@@ -498,21 +559,29 @@ function editWord(id) {
 }
 
 async function deleteWord(id) {
-    if (isGuest) {
-        alert('请先登录后再删除单词');
-        openAuthModal('login');
-        return;
-    }
     const w = words.find(x => x.id === id);
     if (!w) return;
+    if (isGuest && !w.isLocal) {
+        alert('示例单词不能删除，请登录后使用完整功能。\n管理员微信/电话：17623258916');
+        return;
+    }
     if (!confirm(`确定删除单词「${w.word}」吗？`)) return;
 
     try {
         words = words.filter(x => x.id !== id);
+
+        if (isGuest && w.isLocal) {
+            // 访客模式：从本地删除
+            localWords = localWords.filter(x => x.id !== id);
+            saveLocalWords();
+        } else {
+            // 登录模式：同步到云端
+            await apiRequest(`/words?id=eq.${id}`, 'DELETE');
+        }
+
         updateStats();
         renderCategoryOptions();
         renderWordList();
-        await apiRequest(`/words?id=eq.${id}`, 'DELETE');
     } catch (e) {
         alert('删除失败，请检查网络后重试。\n错误: ' + e.message);
         await initData();
@@ -548,16 +617,45 @@ async function saveWord() {
     };
 
     try {
-        if (id) {
-            const idx = words.findIndex(x => x.id === parseInt(id));
-            if (idx >= 0) {
-                words[idx] = { ...words[idx], ...data };
+        if (isGuest) {
+            // 访客模式：保存到本地
+            if (id) {
+                // 编辑本地单词
+                const idx = localWords.findIndex(x => x.id === parseInt(id));
+                if (idx >= 0) {
+                    localWords[idx] = { ...localWords[idx], ...data };
+                }
+                // 同步更新words列表
+                const widx = words.findIndex(x => x.id === parseInt(id));
+                if (widx >= 0) {
+                    words[widx] = { ...words[widx], ...data, isLocal: true };
+                }
+            } else {
+                // 新增本地单词
+                if (localWords.length >= MAX_LOCAL_WORDS) {
+                    alert(`体验模式最多可新增 ${MAX_LOCAL_WORDS} 个单词。\n\n登录后可使用完整功能，数据云端同步。\n管理员微信/电话：17623258916`);
+                    return;
+                }
+                const newId = localNextId++;
+                const newWord = { id: newId, ...data, lastReview: '', reviewCount: 0, isLocal: true };
+                localWords.push(newWord);
+                words.unshift(newWord); // 本地单词放在列表前面
             }
-            await apiRequest(`/words?id=eq.${id}`, 'PATCH', frontendToDb(data));
+            saveLocalWords();
+            alert('保存成功！体验模式下单词仅保存在本地浏览器，清除浏览器数据后会丢失。\n\n登录后可使用完整功能，数据云端同步。\n管理员微信/电话：17623258916');
         } else {
-            const result = await apiRequest('/words?select=id', 'POST', frontendToDb(data));
-            const newId = result && result.length > 0 ? result[0].id : nextId++;
-            words.push({ id: newId, ...data, lastReview: '', reviewCount: 0 });
+            // 登录模式：保存到云端
+            if (id) {
+                const idx = words.findIndex(x => x.id === parseInt(id));
+                if (idx >= 0) {
+                    words[idx] = { ...words[idx], ...data };
+                }
+                await apiRequest(`/words?id=eq.${id}`, 'PATCH', frontendToDb(data));
+            } else {
+                const result = await apiRequest('/words?select=id', 'POST', frontendToDb(data));
+                const newId = result && result.length > 0 ? result[0].id : nextId++;
+                words.push({ id: newId, ...data, lastReview: '', reviewCount: 0 });
+            }
         }
 
         updateStats();
@@ -687,9 +785,9 @@ async function importData(file) {
 // ===== 闪卡复习 =====
 function startReview() {
     if (isGuest) {
-        alert('请先登录后再使用闪卡复习功能');
-        openAuthModal('login');
-        return;
+        if (!confirm('体验模式：闪卡复习可正常体验，但等级变化不会保存。\n\n登录后可使用完整功能，复习进度云端同步。\n管理员微信/电话：17623258916\n\n是否继续体验？')) {
+            return;
+        }
     }
     document.getElementById('reviewOverlay').style.display = 'flex';
     document.getElementById('reviewSettings').style.display = 'flex';
@@ -784,7 +882,8 @@ async function markKnow() {
     }
     updateLastReview(w.id);
 
-    if (updatedLevel) {
+    // 访客模式不更新云端，仅登录用户同步
+    if (updatedLevel && !isGuest) {
         apiRequest(`/words?id=eq.${w.id}`, 'PATCH', {
             level: updatedLevel,
             priority: updatedPriority
@@ -813,7 +912,8 @@ async function markDontKnow() {
     }
     updateLastReview(w.id);
 
-    if (updatedLevel) {
+    // 访客模式不更新云端，仅登录用户同步
+    if (updatedLevel && !isGuest) {
         apiRequest(`/words?id=eq.${w.id}`, 'PATCH', {
             level: updatedLevel,
             priority: updatedPriority
@@ -891,6 +991,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('bannerLoginBtn').addEventListener('click', () => openAuthModal('login'));
     // document.getElementById('bannerRegisterBtn').addEventListener('click', () => openAuthModal('register'));
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+    // 访客体验新增按钮
+    const guestAddBtn = document.getElementById('guestAddBtn');
+    if (guestAddBtn) guestAddBtn.addEventListener('click', openAddModal);
     document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
     document.getElementById('authCancelBtn').addEventListener('click', closeAuthModal);
     document.getElementById('authClose').addEventListener('click', closeAuthModal);
