@@ -589,11 +589,6 @@ async function deleteWord(id) {
 }
 
 async function saveWord() {
-    if (isGuest) {
-        alert('请先登录后再保存单词');
-        openAuthModal('login');
-        return;
-    }
     const id = document.getElementById('wordId').value;
     const word = document.getElementById('formWord').value.trim();
     const meaning = document.getElementById('formMeaning').value.trim();
