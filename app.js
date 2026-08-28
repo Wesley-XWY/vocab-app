@@ -527,6 +527,7 @@ function openAddModal() {
     document.getElementById('formLevel').value = 'E';
     document.getElementById('formCategory').value = '';
     updatePriorityDisplay();
+    clearDuplicateHint();
     document.getElementById('wordModal').style.display = 'flex';
     document.getElementById('formWord').focus();
 }
@@ -555,6 +556,7 @@ function editWord(id) {
     document.getElementById('formDate').value = w.date || '';
     document.getElementById('formScene').value = w.scene || '';
     updatePriorityDisplay();
+    clearDuplicateHint();
     document.getElementById('wordModal').style.display = 'flex';
 }
 
@@ -681,6 +683,51 @@ function closeModal() {
 function updatePriorityDisplay() {
     const level = document.getElementById('formLevel').value;
     document.getElementById('formPriority').value = calcPriority(level);
+}
+
+// 检查单词是否已收录，显示重复提示（不阻止新增）
+function checkDuplicateWord() {
+    const input = document.getElementById('formWord');
+    const hint = document.getElementById('wordDuplicateHint');
+    const currentId = document.getElementById('wordId').value;
+    const word = input.value.trim().toLowerCase();
+
+    if (!word || !hint) {
+        if (hint) hint.style.display = 'none';
+        return;
+    }
+
+    // 搜索相同单词（不区分大小写），编辑模式下排除当前单词
+    const duplicates = words.filter(w =>
+        w.word && w.word.toLowerCase() === word &&
+        (!currentId || w.id !== parseInt(currentId))
+    );
+
+    if (duplicates.length === 0) {
+        hint.style.display = 'none';
+        return;
+    }
+
+    // 显示已收录的词性和中文释义
+    const itemsHtml = duplicates.map(w => {
+        const cat = w.category ? `<span class="hint-category">${escapeHtml(w.category)}</span>` : '';
+        const meaning = w.meaning ? escapeHtml(w.meaning).substring(0, 50) : '(无释义)';
+        return `<div class="hint-item">${cat}${meaning}</div>`;
+    }).join('');
+
+    hint.innerHTML = `
+        <div class="hint-title">✓ 已收录 ${duplicates.length} 个词性/释义</div>
+        ${itemsHtml}
+    `;
+    hint.style.display = 'block';
+}
+
+function clearDuplicateHint() {
+    const hint = document.getElementById('wordDuplicateHint');
+    if (hint) {
+        hint.style.display = 'none';
+        hint.innerHTML = '';
+    }
 }
 
 // ===== 导入导出 =====
@@ -989,6 +1036,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 访客体验新增按钮
     const guestAddBtn = document.getElementById('guestAddBtn');
     if (guestAddBtn) guestAddBtn.addEventListener('click', openAddModal);
+    // 访客体验复习按钮
+    const guestReviewBtn = document.getElementById('guestReviewBtn');
+    if (guestReviewBtn) guestReviewBtn.addEventListener('click', startReview);
     document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
     document.getElementById('authCancelBtn').addEventListener('click', closeAuthModal);
     document.getElementById('authClose').addEventListener('click', closeAuthModal);
@@ -1010,6 +1060,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cancelBtn').addEventListener('click', closeModal);
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('formLevel').addEventListener('change', updatePriorityDisplay);
+    // 单词输入时实时检查重复
+    document.getElementById('formWord').addEventListener('input', checkDuplicateWord);
 
     document.getElementById('wordModal').addEventListener('click', (e) => {
         if (e.target.id === 'wordModal') closeModal();

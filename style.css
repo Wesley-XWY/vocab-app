@@ -865,3 +865,37 @@ body {
     color: var(--accent);
     border: 1px solid rgba(88, 166, 255, 0.3);
 }
+
+/* ===== 单词重复提示 ===== */
+.word-duplicate-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: rgba(63, 185, 80, 0.08);
+    border-left: 2px solid var(--success);
+    padding: 6px 10px;
+    border-radius: 0 4px 4px 0;
+    line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.word-duplicate-hint .hint-title {
+    color: var(--success);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.word-duplicate-hint .hint-item {
+    color: var(--text-secondary);
+    margin: 2px 0;
+}
+
+.word-duplicate-hint .hint-category {
+    display: inline-block;
+    background: var(--bg-hover);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin-right: 6px;
+    color: var(--success);
+}

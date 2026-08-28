@@ -22,7 +22,8 @@
             <!-- 未登录时显示 -->
             <div id="guestButtons">
                 <button class="btn btn-primary" id="guestAddBtn">+ 体验新增</button>
-                <button class="btn btn-secondary" id="loginBtn">登录</button>
+                <button class="btn btn-secondary" id="guestReviewBtn">🎯 体验复习</button>
+                <button class="btn btn-ghost" id="loginBtn">登录</button>
             </div>
             <!-- 登录后显示 -->
             <div id="userButtons" style="display:none">
@@ -138,6 +139,7 @@
                         <div class="form-group">
                             <label>单词 *</label>
                             <input type="text" id="formWord" required placeholder="例如：easy" />
+                            <div class="word-duplicate-hint" id="wordDuplicateHint" style="display:none;margin-top:6px;"></div>
                         </div>
                         <div class="form-group">
                             <label>词性</label>
