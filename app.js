@@ -11,9 +11,14 @@ const CATEGORY_LABELS = {
     'Others': '其他'
 };
 
+// ===== Supabase 客户端 =====
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ===== 状态 =====
 let words = [];
 let nextId = 1;
+let currentUser = null;
+let isGuest = true;
 
 let filters = {
     level: '',
@@ -31,13 +36,20 @@ let reviewState = {
     settings: { priority: '', level: '' }
 };
 
-// ===== Supabase API 基础函数 =====
+// ===== API 请求（带用户认证） =====
 async function apiRequest(path, method = 'GET', body = null) {
     const headers = {
         'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json'
     };
+
+    // 如果已登录，使用用户的 access token
+    if (currentUser && currentUser.access_token) {
+        headers['Authorization'] = `Bearer ${currentUser.access_token}`;
+    } else {
+        headers['Authorization'] = `Bearer ${SUPABASE_KEY}`;
+    }
+
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
 
@@ -58,7 +70,7 @@ async function apiRequest(path, method = 'GET', body = null) {
     }
 }
 
-// 数据库字段名（下划线）转前端字段名（驼峰）
+// 数据库字段名转前端字段名
 function dbToFrontend(w) {
     return {
         id: w.id,
@@ -80,7 +92,7 @@ function dbToFrontend(w) {
 
 // 前端字段名转数据库字段名
 function frontendToDb(w) {
-    return {
+    const data = {
         word: w.word || '',
         phonetic: w.phonetic || '',
         definition: w.definition || '',
@@ -95,6 +107,160 @@ function frontendToDb(w) {
         last_review: w.lastReview || '',
         review_count: w.reviewCount || 0
     };
+    // 如果已登录，加上 user_id
+    if (currentUser && currentUser.id) {
+        data.user_id = currentUser.id;
+    }
+    return data;
+}
+
+// ===== 用户认证 =====
+async function checkAuth() {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (data && data.session) {
+        currentUser = {
+            id: data.session.user.id,
+            email: data.session.user.email,
+            access_token: data.session.access_token
+        };
+        isGuest = false;
+    } else {
+        currentUser = null;
+        isGuest = true;
+    }
+    updateAuthUI();
+}
+
+function updateAuthUI() {
+    const guestButtons = document.getElementById('guestButtons');
+    const userButtons = document.getElementById('userButtons');
+    const userStatus = document.getElementById('userStatus');
+    const guestBanner = document.getElementById('guestBanner');
+    const emptyText = document.getElementById('emptyText');
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+
+    if (isGuest) {
+        guestButtons.style.display = 'inline-block';
+        userButtons.style.display = 'none';
+        userStatus.style.display = 'none';
+        guestBanner.style.display = 'flex';
+        if (emptyText) emptyText.textContent = '没有找到匹配的示例单词';
+        if (clearFiltersBtn) clearFiltersBtn.style.display = 'none';
+    } else {
+        guestButtons.style.display = 'none';
+        userButtons.style.display = 'inline-block';
+        userStatus.style.display = 'inline';
+        userStatus.textContent = `👤 ${currentUser.email}`;
+        guestBanner.style.display = 'none';
+        if (emptyText) emptyText.textContent = '没有找到匹配的单词';
+        if (clearFiltersBtn) clearFiltersBtn.style.display = 'inline-block';
+    }
+}
+
+let authMode = 'login'; // 'login' or 'register'
+
+function openAuthModal(mode) {
+    authMode = mode;
+    const title = document.getElementById('authTitle');
+    const submitBtn = document.getElementById('authSubmitBtn');
+    const switchText = document.getElementById('authSwitchText');
+    const switchBtn = document.getElementById('authSwitchBtn');
+    const message = document.getElementById('authMessage');
+
+    message.style.display = 'none';
+    message.textContent = '';
+
+    if (mode === 'login') {
+        title.textContent = '登录';
+        submitBtn.textContent = '登录';
+        switchText.textContent = '还没有账号？';
+        switchBtn.textContent = '立即注册';
+    } else {
+        title.textContent = '注册';
+        submitBtn.textContent = '注册';
+        switchText.textContent = '已有账号？';
+        switchBtn.textContent = '立即登录';
+    }
+
+    document.getElementById('authForm').reset();
+    document.getElementById('authModal').style.display = 'flex';
+    document.getElementById('authEmail').focus();
+}
+
+function closeAuthModal() {
+    document.getElementById('authModal').style.display = 'none';
+}
+
+function showAuthMessage(text, isError = true) {
+    const msg = document.getElementById('authMessage');
+    msg.textContent = text;
+    msg.style.display = 'block';
+    msg.style.color = isError ? '#f85149' : '#3fb950';
+}
+
+async function handleAuthSubmit() {
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+
+    if (!email || !password) {
+        showAuthMessage('请填写邮箱和密码');
+        return;
+    }
+
+    const submitBtn = document.getElementById('authSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = authMode === 'login' ? '登录中...' : '注册中...';
+
+    try {
+        if (authMode === 'login') {
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            currentUser = {
+                id: data.user.id,
+                email: data.user.email,
+                access_token: data.session.access_token
+            };
+            isGuest = false;
+            closeAuthModal();
+            await initData();
+            alert('登录成功！');
+        } else {
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) throw error;
+            if (data.user && data.session) {
+                currentUser = {
+                    id: data.user.id,
+                    email: data.user.email,
+                    access_token: data.session.access_token
+                };
+                isGuest = false;
+                closeAuthModal();
+                await initData();
+                alert('注册成功！欢迎使用我的单词本。');
+            } else {
+                showAuthMessage('注册成功，请检查邮箱验证后登录（如果开启了邮箱验证）', false);
+            }
+        }
+    } catch (e) {
+        console.error('认证失败:', e);
+        showAuthMessage(e.message || '操作失败，请重试');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = authMode === 'login' ? '登录' : '注册';
+    }
+}
+
+async function handleLogout() {
+    if (!confirm('确定要退出登录吗？')) return;
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) {
+        alert('退出失败: ' + error.message);
+        return;
+    }
+    currentUser = null;
+    isGuest = true;
+    updateAuthUI();
+    await initData();
 }
 
 // ===== 发音功能 =====
@@ -114,19 +280,17 @@ function speakWord(word) {
 // ===== 数据管理 =====
 async function initData() {
     try {
-        // 显示加载状态
         const list = document.getElementById('wordList');
-        if (list) list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">正在从云端加载单词...</div>';
+        if (list) list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">正在加载单词...</div>';
 
-        // 从Supabase加载所有单词
         const data = await apiRequest('/words?select=*&order=date.desc');
         words = (data || []).map(dbToFrontend);
         nextId = words.length > 0 ? Math.max(...words.map(w => w.id)) + 1 : 1;
 
-        console.log(`从云端加载了 ${words.length} 个单词`);
+        console.log(`加载了 ${words.length} 个单词 (${isGuest ? '访客模式' : '已登录: ' + currentUser.email})`);
     } catch (e) {
         console.error('加载数据失败:', e);
-        alert('从云端加载单词失败，请检查网络连接后刷新页面。\n\n错误信息: ' + e.message);
+        alert('加载单词失败，请检查网络连接后刷新页面。\n\n错误信息: ' + e.message);
         words = [];
     }
     updateStats();
@@ -141,15 +305,15 @@ function calcPriority(level) {
     return '';
 }
 
-// 更新单词的最近复习日期和复习次数（同步到云端）
+// 更新单词的最近复习日期和复习次数
 async function updateLastReview(wordId) {
+    if (isGuest) return; // 访客模式不更新
     const w = words.find(x => x.id === wordId);
     if (w) {
         const today = new Date().toISOString().split('T')[0];
         w.lastReview = today;
         w.reviewCount = (w.reviewCount || 0) + 1;
 
-        // 异步同步到云端，不阻塞UI
         apiRequest(`/words?id=eq.${wordId}`, 'PATCH', {
             last_review: today,
             review_count: w.reviewCount
@@ -159,7 +323,12 @@ async function updateLastReview(wordId) {
 
 // ===== 渲染 =====
 function updateStats() {
-    document.getElementById('totalStats').textContent = `共 ${words.length} 词`;
+    const stats = document.getElementById('totalStats');
+    if (isGuest) {
+        stats.textContent = `示例 ${words.length} 词`;
+    } else {
+        stats.textContent = `共 ${words.length} 词`;
+    }
 }
 
 function renderCategoryOptions() {
@@ -223,6 +392,7 @@ function renderWordList() {
                     ${w.level ? `<span class="tag tag-level tag-level-${w.level}">${w.level}</span>` : '<span class="tag tag-level tag-pending">待评级</span>'}
                     ${w.priority ? `<span class="tag tag-priority-${w.priority}">${w.priority}优先</span>` : '<span class="tag tag-priority-pending">待评级</span>'}
                     ${w.category ? `<span class="tag tag-category">${escapeHtml(w.category)}</span>` : ''}
+                    ${isGuest ? '<span class="tag" style="background:#30363d;color:#8b949e;">示例</span>' : ''}
                 </div>
             </div>
             ${w.phonetic ? `<div class="word-card-phonetic">${escapeHtml(w.phonetic)}</div>` : ''}
@@ -238,10 +408,12 @@ function renderWordList() {
                 ${w.extend ? `<div class="detail-section"><div class="detail-label">扩展 / 搭配</div><div class="detail-content">${escapeHtml(w.extend)}</div></div>` : ''}
                 ${w.scene ? `<div class="detail-section"><div class="detail-label">场景 / 备注</div><div class="detail-content">${escapeHtml(w.scene)}</div></div>` : ''}
             </div>
+            ${!isGuest ? `
             <div class="word-card-actions">
                 <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); editWord(${w.id})">编辑</button>
                 <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); deleteWord(${w.id})">删除</button>
             </div>
+            ` : ''}
         </div>
     `).join('');
 
@@ -251,10 +423,9 @@ function renderWordList() {
             if (e.target.classList.contains('speak-btn')) return;
             const isExpanding = !card.classList.contains('expanded');
             card.classList.toggle('expanded');
-            if (isExpanding) {
+            if (isExpanding && !isGuest) {
                 const wordId = parseInt(card.dataset.id);
                 updateLastReview(wordId);
-                // 更新卡片上的复习日期和次数显示
                 const dateItems = card.querySelectorAll('.date-item');
                 const today = new Date().toISOString().split('T')[0];
                 const w = words.find(x => x.id === wordId);
@@ -286,6 +457,11 @@ function escapeHtml(str) {
 
 // ===== 单词 CRUD =====
 function openAddModal() {
+    if (isGuest) {
+        alert('请先登录后再新增单词');
+        openAuthModal('login');
+        return;
+    }
     document.getElementById('modalTitle').textContent = '新增单词';
     document.getElementById('wordId').value = '';
     document.getElementById('wordForm').reset();
@@ -298,6 +474,11 @@ function openAddModal() {
 }
 
 function editWord(id) {
+    if (isGuest) {
+        alert('请先登录后再编辑单词');
+        openAuthModal('login');
+        return;
+    }
     const w = words.find(x => x.id === id);
     if (!w) return;
     document.getElementById('modalTitle').textContent = '编辑单词';
@@ -317,27 +498,33 @@ function editWord(id) {
 }
 
 async function deleteWord(id) {
+    if (isGuest) {
+        alert('请先登录后再删除单词');
+        openAuthModal('login');
+        return;
+    }
     const w = words.find(x => x.id === id);
     if (!w) return;
     if (!confirm(`确定删除单词「${w.word}」吗？`)) return;
 
     try {
-        // 先从内存删除，更新UI
         words = words.filter(x => x.id !== id);
         updateStats();
         renderCategoryOptions();
         renderWordList();
-
-        // 同步到云端
         await apiRequest(`/words?id=eq.${id}`, 'DELETE');
     } catch (e) {
         alert('删除失败，请检查网络后重试。\n错误: ' + e.message);
-        // 失败则重新加载
         await initData();
     }
 }
 
 async function saveWord() {
+    if (isGuest) {
+        alert('请先登录后再保存单词');
+        openAuthModal('login');
+        return;
+    }
     const id = document.getElementById('wordId').value;
     const word = document.getElementById('formWord').value.trim();
     const meaning = document.getElementById('formMeaning').value.trim();
@@ -362,15 +549,12 @@ async function saveWord() {
 
     try {
         if (id) {
-            // 编辑：先更新内存
             const idx = words.findIndex(x => x.id === parseInt(id));
             if (idx >= 0) {
                 words[idx] = { ...words[idx], ...data };
             }
-            // 同步到云端
             await apiRequest(`/words?id=eq.${id}`, 'PATCH', frontendToDb(data));
         } else {
-            // 新增：先插入云端，拿到自动生成的id
             const result = await apiRequest('/words?select=id', 'POST', frontendToDb(data));
             const newId = result && result.length > 0 ? result[0].id : nextId++;
             words.push({ id: newId, ...data, lastReview: '', reviewCount: 0 });
@@ -381,7 +565,6 @@ async function saveWord() {
         renderWordList();
         closeModal();
 
-        // 如果正在复习，更新当前复习卡片的显示
         if (document.getElementById('reviewOverlay').style.display === 'flex' &&
             document.getElementById('flashcard').style.display !== 'none') {
             const currentWord = reviewState.queue[reviewState.currentIndex];
@@ -409,6 +592,11 @@ function updatePriorityDisplay() {
 
 // ===== 导入导出 =====
 function exportData() {
+    if (isGuest) {
+        alert('请先登录后再导出数据');
+        openAuthModal('login');
+        return;
+    }
     const data = {
         version: 2,
         exported_at: new Date().toLocaleString('zh-CN'),
@@ -425,12 +613,16 @@ function exportData() {
 }
 
 async function importData(file) {
+    if (isGuest) {
+        alert('请先登录后再导入数据');
+        openAuthModal('login');
+        return;
+    }
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target.result);
             const importedWords = (data.words || []).map(w => {
-                // 兼容旧格式
                 if (w.phonetic === undefined && w.paraphrase) {
                     const raw = w.paraphrase || '';
                     const phoneticPattern = /^(\/[^\/]+\/|\[[^\]]+\])\s*/;
@@ -451,7 +643,6 @@ async function importData(file) {
             const choice = confirm(`找到 ${importedWords.length} 个单词。\n\n点击「确定」= 合并到现有单词本\n点击「取消」= 替换现有单词本`);
 
             if (choice) {
-                // 合并：批量插入到云端
                 const existing = new Set(words.map(w => w.word + '|' + w.meaning));
                 const toAdd = importedWords.filter(w => {
                     const key = w.word + '|' + w.meaning;
@@ -463,7 +654,6 @@ async function importData(file) {
                     return;
                 }
 
-                // 分批插入，每批50条
                 let added = 0;
                 for (let i = 0; i < toAdd.length; i += 50) {
                     const batch = toAdd.slice(i, i + 50).map(frontendToDb);
@@ -473,14 +663,10 @@ async function importData(file) {
 
                 alert(`合并完成！新增 ${added} 个单词，跳过 ${importedWords.length - added} 个重复项。`);
             } else {
-                // 替换：先清空现有，再批量插入
                 if (!confirm('确定要替换现有所有单词吗？此操作不可撤销。')) return;
-
-                // 清空云端
                 await apiRequest('/words?id=gte.0', 'DELETE');
                 words = [];
 
-                // 分批插入
                 for (let i = 0; i < importedWords.length; i += 50) {
                     const batch = importedWords.slice(i, i + 50).map(frontendToDb);
                     await apiRequest('/words', 'POST', batch);
@@ -489,7 +675,6 @@ async function importData(file) {
                 alert(`已替换为 ${importedWords.length} 个单词。`);
             }
 
-            // 重新从云端加载
             await initData();
         } catch (err) {
             alert('导入失败：' + err.message);
@@ -501,6 +686,11 @@ async function importData(file) {
 
 // ===== 闪卡复习 =====
 function startReview() {
+    if (isGuest) {
+        alert('请先登录后再使用闪卡复习功能');
+        openAuthModal('login');
+        return;
+    }
     document.getElementById('reviewOverlay').style.display = 'flex';
     document.getElementById('reviewSettings').style.display = 'flex';
     document.getElementById('flashcard').style.display = 'none';
@@ -553,7 +743,6 @@ function showFlashcard() {
     document.getElementById('cardExtend').textContent = w.extend ? '扩展：' + w.extend : '';
     document.getElementById('flashcard').classList.remove('flipped');
 
-    // 绑定闪卡发音按钮
     setTimeout(() => {
         const btn = document.querySelector('#cardWord .speak-btn');
         if (btn) {
@@ -595,7 +784,6 @@ async function markKnow() {
     }
     updateLastReview(w.id);
 
-    // 异步同步等级到云端
     if (updatedLevel) {
         apiRequest(`/words?id=eq.${w.id}`, 'PATCH', {
             level: updatedLevel,
@@ -625,7 +813,6 @@ async function markDontKnow() {
     }
     updateLastReview(w.id);
 
-    // 异步同步等级到云端
     if (updatedLevel) {
         apiRequest(`/words?id=eq.${w.id}`, 'PATCH', {
             level: updatedLevel,
@@ -653,8 +840,11 @@ function closeReview() {
 }
 
 // ===== 事件绑定 =====
-document.addEventListener('DOMContentLoaded', () => {
-    initData();
+document.addEventListener('DOMContentLoaded', async () => {
+    // 先检查登录状态
+    await checkAuth();
+    // 然后加载数据
+    await initData();
 
     // 搜索
     document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -694,6 +884,26 @@ document.addEventListener('DOMContentLoaded', () => {
         renderWordList();
     });
 
+    // 认证相关
+    document.getElementById('loginBtn').addEventListener('click', () => openAuthModal('login'));
+    document.getElementById('registerBtn').addEventListener('click', () => openAuthModal('register'));
+    document.getElementById('bannerLoginBtn').addEventListener('click', () => openAuthModal('login'));
+    document.getElementById('bannerRegisterBtn').addEventListener('click', () => openAuthModal('register'));
+    document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+    document.getElementById('authSubmitBtn').addEventListener('click', handleAuthSubmit);
+    document.getElementById('authCancelBtn').addEventListener('click', closeAuthModal);
+    document.getElementById('authClose').addEventListener('click', closeAuthModal);
+    document.getElementById('authSwitchBtn').addEventListener('click', () => {
+        openAuthModal(authMode === 'login' ? 'register' : 'login');
+    });
+    document.getElementById('authForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleAuthSubmit();
+    });
+    document.getElementById('authModal').addEventListener('click', (e) => {
+        if (e.target.id === 'authModal') closeAuthModal();
+    });
+
     // 新增
     document.getElementById('addBtn').addEventListener('click', openAddModal);
     document.getElementById('saveBtn').addEventListener('click', saveWord);
@@ -701,7 +911,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('formLevel').addEventListener('change', updatePriorityDisplay);
 
-    // 点击弹窗外部关闭
     document.getElementById('wordModal').addEventListener('click', (e) => {
         if (e.target.id === 'wordModal') closeModal();
     });
@@ -791,7 +1000,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeReview();
             } else if (document.getElementById('wordModal').style.display === 'flex') {
                 closeModal();
+            } else if (document.getElementById('authModal').style.display === 'flex') {
+                closeAuthModal();
             }
+        }
+    });
+
+    // 监听登录状态变化
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+            currentUser = {
+                id: session.user.id,
+                email: session.user.email,
+                access_token: session.access_token
+            };
+            isGuest = false;
+            updateAuthUI();
+        } else if (event === 'SIGNED_OUT') {
+            currentUser = null;
+            isGuest = true;
+            updateAuthUI();
         }
     });
 });
