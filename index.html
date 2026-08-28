@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的单词本</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <div class="header-left">
+            <h1 class="logo">📚 我的单词本</h1>
+            <span class="stats" id="totalStats">共 0 词</span>
+        </div>
+        <div class="header-right">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜索单词、释义..." />
+            </div>
+            <button class="btn btn-primary" id="addBtn">+ 新增单词</button>
+            <button class="btn btn-secondary" id="reviewBtn">🎯 闪卡复习</button>
+            <button class="btn btn-ghost" id="exportBtn">导出</button>
+            <button class="btn btn-ghost" id="importBtn">导入</button>
+            <input type="file" id="importFile" accept=".json" style="display:none" />
+        </div>
+    </header>
+
+    <!-- 筛选栏 -->
+    <div class="filter-bar">
+        <div class="filter-group">
+            <label>等级：</label>
+            <div class="filter-chips" id="levelFilters">
+                <button class="chip active" data-level="">全部</button>
+                <button class="chip chip-a" data-level="A">A 掌握</button>
+                <button class="chip chip-b" data-level="B">B</button>
+                <button class="chip chip-c" data-level="C">C</button>
+                <button class="chip chip-d" data-level="D">D</button>
+                <button class="chip chip-e" data-level="E">E 陌生</button>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label>优先级：</label>
+            <div class="filter-chips" id="priorityFilters">
+                <button class="chip active" data-priority="">全部</button>
+                <button class="chip chip-low" data-priority="低">低</button>
+                <button class="chip chip-mid" data-priority="中">中</button>
+                <button class="chip chip-high" data-priority="高">高</button>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label>词性：</label>
+            <select id="categoryFilter" class="select">
+                <option value="">全部</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>排序：</label>
+            <select id="sortSelect" class="select">
+                <option value="date_desc">最新添加</option>
+                <option value="date_asc">最早添加</option>
+                <option value="word_asc">单词 A-Z</option>
+                <option value="level_asc">等级 A→E</option>
+                <option value="level_desc">等级 E→A</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 单词列表 -->
+    <main class="word-list" id="wordList">
+        <!-- 单词卡片由JS动态生成 -->
+    </main>
+
+    <!-- 空状态 -->
+    <div class="empty-state" id="emptyState" style="display:none">
+        <p>没有找到匹配的单词</p>
+        <button class="btn btn-primary" id="clearFiltersBtn">清除筛选</button>
+    </div>
+
+    <!-- 新增/编辑弹窗 -->
+    <div class="modal-overlay" id="wordModal" style="display:none">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">新增单词</h2>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="wordForm">
+                    <input type="hidden" id="wordId" />
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>单词 *</label>
+                            <input type="text" id="formWord" required placeholder="例如：easy" />
+                        </div>
+                        <div class="form-group">
+                            <label>词性</label>
+                            <select id="formCategory" class="select">
+                                <option value="">请选择</option>
+                                <option value="Noun">Noun 名词</option>
+                                <option value="Verb">Verb 动词</option>
+                                <option value="Adjective">Adjective 形容词</option>
+                                <option value="Adverb">Adverb 副词</option>
+                                <option value="Preposition">Preposition 介词</option>
+                                <option value="Others">Others 其他</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>等级（熟练程度）</label>
+                            <select id="formLevel" class="select">
+                                <option value="A">A - 彻底掌握</option>
+                                <option value="B">B - 比较熟悉</option>
+                                <option value="C">C - 有印象</option>
+                                <option value="D">D - 不太熟</option>
+                                <option value="E">E - 完全陌生</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>优先级（自动计算）</label>
+                            <input type="text" id="formPriority" readonly class="readonly-input" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>音标</label>
+                            <input type="text" id="formPhonetic" placeholder="/ˈiːzi/" />
+                        </div>
+                        <div class="form-group">
+                            <label>中文释义 *</label>
+                            <input type="text" id="formMeaning" required placeholder="adj. 容易的；舒适的" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>英文释义</label>
+                        <textarea id="formDefinition" rows="3" placeholder="not difficult; done or obtained without a lot of effort or problems"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>例句</label>
+                        <textarea id="formExample" rows="2" placeholder="make it easy 轻易&#10;vegetables that are easy to grow"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>扩展 / 搭配</label>
+                        <textarea id="formExtend" rows="2" placeholder="as easy as anything&#10;easy money"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>添加日期</label>
+                            <input type="date" id="formDate" />
+                        </div>
+                        <div class="form-group">
+                            <label>场景 / 备注</label>
+                            <input type="text" id="formScene" placeholder="可选" />
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="cancelBtn">取消</button>
+                <button class="btn btn-primary" id="saveBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 闪卡复习模式 -->
+    <div class="review-overlay" id="reviewOverlay" style="display:none">
+        <div class="review-container">
+            <div class="review-header">
+                <h2>🎯 闪卡复习</h2>
+                <div class="review-progress">
+                    <span id="reviewProgress">0 / 0</span>
+                    <button class="btn btn-ghost btn-sm" id="reviewSettingsBtn">设置范围</button>
+                    <button class="btn btn-ghost btn-sm" id="closeReviewBtn">退出</button>
+                </div>
+            </div>
+            <div class="review-settings" id="reviewSettings" style="display:none">
+                <label>复习优先级：</label>
+                <div class="filter-chips">
+                    <button class="chip active" data-review-priority="">全部</button>
+                    <button class="chip chip-low" data-review-priority="低">低</button>
+                    <button class="chip chip-mid" data-review-priority="中">中</button>
+                    <button class="chip chip-high" data-review-priority="高">高</button>
+                </div>
+                <label style="margin-left:20px">复习等级：</label>
+                <div class="filter-chips">
+                    <button class="chip active" data-review-level="">全部</button>
+                    <button class="chip chip-a" data-review-level="A">A</button>
+                    <button class="chip chip-b" data-review-level="B">B</button>
+                    <button class="chip chip-c" data-review-level="C">C</button>
+                    <button class="chip chip-d" data-review-level="D">D</button>
+                    <button class="chip chip-e" data-review-level="E">E</button>
+                </div>
+                <button class="btn btn-primary btn-sm" id="startReviewBtn" style="margin-left:20px">开始复习</button>
+            </div>
+            <div class="flashcard" id="flashcard">
+                <div class="flashcard-inner" id="flashcardInner">
+                    <div class="flashcard-front">
+                        <div class="flashcard-word" id="cardWord">word</div>
+                        <div class="flashcard-category" id="cardCategory"></div>
+                        <div class="flashcard-hint">点击卡片查看释义</div>
+                    </div>
+                    <div class="flashcard-back">
+                        <div class="flashcard-word-small" id="cardWordBack"></div>
+                        <div class="flashcard-phonetic" id="cardPhonetic"></div>
+                        <div class="flashcard-meaning" id="cardMeaning"></div>
+                        <div class="flashcard-definition" id="cardDefinition"></div>
+                        <div class="flashcard-example" id="cardExample"></div>
+                        <div class="flashcard-extend" id="cardExtend"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="review-actions">
+                <button class="btn btn-secondary" id="editCurrentBtn">✏️ 编辑</button>
+                <button class="btn btn-danger" id="dontKnowBtn">❌ 不认识</button>
+                <button class="btn btn-success" id="knowBtn">✅ 认识</button>
+                <button class="btn btn-secondary" id="skipBtn">⏭️ 跳过</button>
+            </div>
+            <div class="review-hints">
+                <span>❌ 不认识 → 等级降一级</span>
+                <span>✅ 认识 → 等级升一级</span>
+                <span>⏭️ 跳过 → 等级不变</span>
+            </div>
+            <div class="review-result" id="reviewResult" style="display:none">
+                <h3>复习完成！</h3>
+                <p id="resultSummary"></p>
+                <button class="btn btn-primary" id="reviewAgainBtn">再来一轮</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
