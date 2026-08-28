@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的单词本</title>
+    <title>English Book</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -11,17 +11,18 @@
     <!-- 顶部导航 -->
     <header class="header">
         <div class="header-left">
-            <h1 class="logo">📚 我的单词本</h1>
+            <h1 class="logo"> English Book</h1>
             <span class="stats" id="totalStats">共 0 词</span>
             <span class="stats" id="userStatus" style="display:none;margin-left:10px;color:#58a6ff;"></span>
         </div>
         <div class="header-right">
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="搜索单词、释义..." />
+                <input type="text" id="searchInput" placeholder="搜索单词..." />
             </div>
             <!-- 未登录时显示 -->
             <div id="guestButtons">
-                <button class="btn btn-primary" id="loginBtn">登录</button>
+                <button class="btn btn-primary" id="guestAddBtn">+ 体验新增</button>
+                <button class="btn btn-secondary" id="loginBtn">登录</button>
             </div>
             <!-- 登录后显示 -->
             <div id="userButtons" style="display:none">
@@ -37,8 +38,9 @@
 
     <!-- 访客提示条 -->
     <div class="guest-banner" id="guestBanner" style="display:none">
-        <span>👋 你正在浏览示例单词，请联系管理员开通账号后登录使用</span>
+        <span>体验模式：可浏览示例单词并体验新增（最多20个，仅保存在本地浏览器）。登录后使用完整功能，数据云端同步。</span>
         <button class="btn btn-primary btn-sm" id="bannerLoginBtn">立即登录</button>
+        <span style="font-size:12px;color:var(--text-muted);">管理员微信/电话：17623258916</span>
     </div>
 
     <!-- 筛选栏 -->
